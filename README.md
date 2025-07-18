@@ -28,7 +28,7 @@ This project detects book chapters using computer vision and plays matching vide
 
 ## Project Structure
 - `main.py` - Entry point for the FastAPI server.
-- `src/ - Image procsseing and chapter detection logic.
+- `src/` - Image procsseing and chapter detection logic.
 - `static/` - Static assets (images, videos).
 - `templates/` - HTML templates for the web client.
 
