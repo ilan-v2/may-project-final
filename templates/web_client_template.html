@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Book Chapter Video Player</title>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      background: #000;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      width: 100vw;
+      margin: 0;
+    }
+    #player {
+      width: 100vw;
+      height: 100vh;
+      max-width: 100vw;
+      max-height: 100vh;
+      display: block;
+      background: #000;
+      object-fit: contain;
+    }
+  </style>
+</head>
+<body>
+  <video id="player" width="640" height="360" controls autoplay loop>
+    <source id="videoSource" src="{{ default_video_path }}" type="video/mp4">
+  </video>
+  <!-- WS_PORT is injected by FastAPI template rendering -->
+  <script>
+    const player = document.getElementById('player');
+    const videoSource = document.getElementById('videoSource');
+    const wsPort = {{ ws_port }};
+    const ws = new WebSocket(`ws://${location.hostname}:${wsPort}/ws`);
+    ws.onopen = () => {
+      console.log('WebSocket connection established');
+    };
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+    ws.onclose = () => {
+      console.log('WebSocket connection closed');
+    };
+    let currentIndex = null;
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.error) {
+          console.error('Server error:', data.error);
+          return;
+        }
+        const idx = data.index;
+        const path = data.path;
+        // log path
+        console.log(`Received index: ${idx}, path: ${path}`);
+        if (typeof idx === 'number' && typeof path === 'string' && idx !== currentIndex) {
+          currentIndex = idx;
+          videoSource.src = path;
+          player.load();
+          player.play();
+        }
+      } catch (e) {
+        console.error('Invalid message from server:', event.data);
+      }
+    };
+  </script>
+</body>
+</html>
