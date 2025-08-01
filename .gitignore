@@ -1,4 +1,6 @@
 static/videos/ 
+static/archive/
+static/data/
 models/
 
 # Byte-compiled / optimized / DLL files
@@ -9,7 +11,7 @@ __pycache__/
 # C extensions
 *.so
 
-# Distribution / packaging
+# Distribution / packaging;
 .Python
 build/
 develop-eggs/
