@@ -1,6 +1,12 @@
 import cv2
 import numpy as np
-from page_locator import RectangleLocator, FixedRectangleLocator
+from page_locator import (
+    FixedTrapezoidLocator, 
+    RectangleLocator, 
+    FixedRectangleLocator,
+    RectanglePolygon,
+    TrapezoidPolygon
+)
 from yolo_locator import YoloLocator
 from image_classifier import ClassicVisionClassifier
 
@@ -64,7 +70,7 @@ class VisionDetector:
 
             if page_contour is not None:
                 cv2.drawContours(frame, [page_contour], -1, (0, 255, 0), 3)
-                
+
                 # give the focus frame to the classifier
                 winner, scores = self._find_winner(frame, page_contour, with_scores=True)
                 # show scores in blue, with more space below the winner text
@@ -132,11 +138,23 @@ class VisionDetector:
                 break
 
 if __name__ == "__main__":
-    default_rect = (0.1, 0.1, 0.85, 0.8)  # Example rectangle coordinates
-    locator = FixedRectangleLocator(default_rect)
+    default_rect = RectanglePolygon(0.1, 0.1, 0.85, 0.8)  # Example rectangle coordinates
+    # locator = FixedRectangleLocator(default_rect)
+
+    # Example robust trapezoid: top edge centered at 0.5, y=0.1, width=0.8; bottom edge centered at 0.5, y=0.9, width=0.6
+    default_trap = TrapezoidPolygon(
+        x_top_center=0.5,
+        y_top=0.05,
+        top_width=0.95,
+        x_bottom_center=0.5,
+        y_bottom=0.8,
+        bottom_width=0.6
+    )
+    locator = FixedTrapezoidLocator(default_trap)
+
     # locator = RectangleLocator()  # Use rectangle locator
     ref_path = "static/chapter_ref" # run from the root of the project
-    image_files = ["darkness.jpg", "discover.jpg", "enlightenment.jpg"]
+    image_files = ["darkness.png", "discover.png", "enlightenment.png"]
     classifier = ClassicVisionClassifier(reference_images=[f"{ref_path}/{img}" for img in image_files], conf_ths=50)
     detector = VisionDetector(locator, classifier, refresh_rate=1, conf_frames=10)
     detector.debug_loop()  # Start the debug loop

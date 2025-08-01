@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import cv2
 import numpy as np
 
@@ -23,29 +24,26 @@ class RectangleLocator(Locator):
         # processed = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         # processed = cv2.GaussianBlur(processed, (5, 5), 0)
         processed = cv2.Canny(processed, 75, 200)
+        
+        contours, hierarchy = cv2.findContours(processed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            # Return the largest contour by area
+            return max(contours, key=cv2.contourArea)
+        else:
+            return None
 
-        contours, _ = cv2.findContours(processed, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-        # Find the largest 4-point contour directly
-        max_contour = None
-        max_area = 0
-        for contour in contours:
-            peri = cv2.arcLength(contour, True)
-            approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-            if len(approx) == 4:
-                area = cv2.contourArea(approx)
-                if area > max_area:
-                    max_area = area
-                    max_contour = approx
+@dataclass
+class RectanglePolygon:
+    x: float
+    y: float
+    width: float
+    height: float
 
-        if max_contour is not None:
-            return max_contour
 
-        return None
-    
 class FixedRectangleLocator(Locator):
-    def __init__(self, rect):
+    def __init__(self, rect: RectanglePolygon):
         """
-        rect: tuple (x, y, width, height) - coordinates of the rectangle relative to the frame.
+        rect: RectanglePolygon - coordinates of the rectangle relative to the frame.
         coordinate should be between 0 and 1, representing the percentage of the frame size.
         """
         self.rect = rect
@@ -54,15 +52,57 @@ class FixedRectangleLocator(Locator):
         """
         Returns a rectangle contour centered at the given location on the frame.
         """
-        x, y, width, height = self.rect
         h, w = frame.shape[:2]
-        x1 = int(x * w)
-        y1 = int(y * h)
-        x2 = int((x + width) * w)
-        y2 = int((y + height) * h)
+        x1 = int(self.rect.x * w)
+        y1 = int(self.rect.y * h)
+        x2 = int((self.rect.x + self.rect.width) * w)
+        y2 = int((self.rect.y + self.rect.height) * h)
         return np.array([
             [x1, y1],
             [x2, y1],
             [x2, y2],
             [x1, y2]
+        ], dtype=np.int32)
+    
+#fixed Trapezoid locator, used for fixed rectangle detection
+@dataclass
+class TrapezoidPolygon:
+    x_top_center: float   # Center x of top edge (0-1)
+    y_top: float          # y of top edge (0-1)
+    top_width: float      # width of top edge (0-1)
+    x_bottom_center: float # Center x of bottom edge (0-1)
+    y_bottom: float        # y of bottom edge (0-1)
+    bottom_width: float    # width of bottom edge (0-1)
+
+class FixedTrapezoidLocator(Locator):
+    def __init__(self, trapezoid: TrapezoidPolygon):
+        """
+        trapezoid: TrapezoidPolygon - robust definition (see above)
+        """
+        self.trapezoid = trapezoid
+
+    def find_page_contour(self, frame):
+        """
+        Returns a trapezoidal contour based on the robust coordinates.
+        """
+        h, w = frame.shape[:2]
+        # Top edge
+        y1 = int(self.trapezoid.y_top * h)
+        cx1 = int(self.trapezoid.x_top_center * w)
+        half_top = int((self.trapezoid.top_width * w) / 2)
+        x1 = max(0, min(w-1, cx1 - half_top))  # top-left
+        x2 = max(0, min(w-1, cx1 + half_top))  # top-right
+
+        # Bottom edge
+        y2 = int(self.trapezoid.y_bottom * h)
+        cx2 = int(self.trapezoid.x_bottom_center * w)
+        half_bottom = int((self.trapezoid.bottom_width * w) / 2)
+        x3 = max(0, min(w-1, cx2 + half_bottom))  # bottom-right
+        x4 = max(0, min(w-1, cx2 - half_bottom))  # bottom-left
+
+        return np.array([
+            [x1, y1],  # top-left
+            [x2, y1],  # top-right
+            [x3, y2],  # bottom-right
+            [x4, y2]   # bottom-left
         ], dtype=np.int32)

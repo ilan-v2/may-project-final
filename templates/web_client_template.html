@@ -32,6 +32,10 @@
   </style>
 </head>
 <body>
+  <div style="position: absolute; top: 20px; left: 0; width: 100vw; text-align: center; z-index: 10;">
+    <span id="chapterName" style="color: #fff; font-size: 2em; text-shadow: 0 0 10px #000; background: rgba(0,0,0,0.4); padding: 0.2em 1em; border-radius: 0.5em;"></span>
+    <span id="errorMsg" style="color: #ff5555; font-size: 1.2em; margin-left: 2em;"></span>
+  </div>
   <video id="player" width="640" height="360" controls autoplay loop>
     <source id="videoSource" src="{{ default_video_path }}" type="video/mp4">
   </video>
@@ -39,15 +43,19 @@
   <script>
     const player = document.getElementById('player');
     const videoSource = document.getElementById('videoSource');
+    const chapterName = document.getElementById('chapterName');
+    const errorMsg = document.getElementById('errorMsg');
     const wsPort = {{ ws_port }};
     const ws = new WebSocket(`ws://${location.hostname}:${wsPort}/ws`);
     ws.onopen = () => {
       console.log('WebSocket connection established');
     };
     ws.onerror = (error) => {
+      errorMsg.textContent = 'WebSocket error';
       console.error('WebSocket error:', error);
     };
     ws.onclose = () => {
+      errorMsg.textContent = 'WebSocket connection closed';
       console.log('WebSocket connection closed');
     };
     let currentIndex = null;
@@ -55,20 +63,28 @@
       try {
         const data = JSON.parse(event.data);
         if (data.error) {
-          console.error('Server error:', data.error);
+          errorMsg.textContent = data.error;
+          chapterName.textContent = '';
           return;
+        } else {
+          errorMsg.textContent = '';
         }
         const idx = data.index;
         const path = data.path;
+        const chapter = data.chapter;
         // log path
-        console.log(`Received index: ${idx}, path: ${path}`);
+        console.log(`Received index: ${idx}, path: ${path}, chapter: ${chapter}`);
         if (typeof idx === 'number' && typeof path === 'string' && idx !== currentIndex) {
           currentIndex = idx;
           videoSource.src = path;
           player.load();
           player.play();
         }
+        if (typeof chapter === 'string') {
+          chapterName.textContent = chapter;
+        }
       } catch (e) {
+        errorMsg.textContent = 'Invalid message from server';
         console.error('Invalid message from server:', event.data);
       }
     };
