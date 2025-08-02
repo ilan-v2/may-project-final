@@ -1,20 +1,10 @@
 import cv2
 import numpy as np
 from page_locator import (
-    FixedTrapezoidLocator, 
-    RectangleLocator, 
-    FixedRectangleLocator,
-    RectanglePolygon,
-    TrapezoidPolygon
+    CornerRectLocator
 )
 from yolo_locator import YoloLocator
-from image_classifier import ClassicVisionClassifier
-
-
-def flip_image(frame):
-    # flip the image 180 degrees, because the camera is upside down
-    return cv2.flip(frame, -1)
-
+from image_classifier import MultiScoreImageClassifier
 
 class VisionDetector:
     """
@@ -30,6 +20,7 @@ class VisionDetector:
         self.locator = locator
         self.classifier = classifier
         self.refresh_rate = refresh_rate
+        print(f"Refresh rate: {self.refresh_rate} ms")
         self.conf_frames = conf_frames
 
     def _find_winner(self, frame, focus_contour, with_scores=False):
@@ -41,15 +32,24 @@ class VisionDetector:
             focus_contour: The contour of the page to focus on.
         """
         winner_index = None
-        scores = self.classifier.classify(frame, focus_contour)
-        if scores is not None:
-            if min(scores) < self.classifier.conf_ths:
-                winner_index = np.argmin(scores)
-        winner = self.classifier.reference_names[winner_index] if winner_index is not None else None
+        # get the patch of the frame that contains the focus contour
+        focus_patch = self._get_focus_patch(frame, focus_contour)
+        scores = self.classifier.classify(focus_patch) # should return a dict of scores
+        if scores is None:
+            return None, None if with_scores else None
+
+        winner = max(scores, key=scores.get)  # Get the key with the highest value
         if with_scores:
             return winner, scores
         else:
             return winner
+
+    def _get_focus_patch(self, frame, focus_contour):
+        """
+        Get the patch of the frame that contains the focus contour.
+        """
+        x, y, w, h = cv2.boundingRect(focus_contour)
+        return frame[y:y+h, x:x+w]
 
     def debug_loop(self):
         """
@@ -65,9 +65,8 @@ class VisionDetector:
             if not ret:
                 break
 
-            frame = flip_image(frame)
+            frame = cv2.rotate(frame, cv2.ROTATE_180)  # Flip the image
             page_contour = self.locator.get_page_contour(frame)
-
             if page_contour is not None:
                 cv2.drawContours(frame, [page_contour], -1, (0, 255, 0), 3)
 
@@ -76,8 +75,8 @@ class VisionDetector:
                 # show scores in blue, with more space below the winner text
                 y_start = 70  # Start scores lower to add space after winner
                 if scores is not None:
-                    for i, score in enumerate(scores):
-                        cv2.putText(frame, f"{self.classifier.reference_names[i]}: {score:.2f}",
+                    for i, key in enumerate(scores):
+                        cv2.putText(frame, f"{key}: {scores[key]:.2f}",
                                     (30, y_start + i * 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
 
                 if winner is not None:
@@ -118,7 +117,7 @@ class VisionDetector:
             if not ret:
                 break
 
-            frame = flip_image(frame)
+            frame = cv2.rotate(frame, cv2.ROTATE_180)  # Flip the image
             page_contour = self.locator.get_page_contour(frame)
 
             if page_contour is not None:
@@ -138,24 +137,15 @@ class VisionDetector:
                 break
 
 if __name__ == "__main__":
-    default_rect = RectanglePolygon(0.1, 0.1, 0.85, 0.8)  # Example rectangle coordinates
-    # locator = FixedRectangleLocator(default_rect)
-
-    # Example robust trapezoid: top edge centered at 0.5, y=0.1, width=0.8; bottom edge centered at 0.5, y=0.9, width=0.6
-    default_trap = TrapezoidPolygon(
-        x_top_center=0.5,
-        y_top=0.05,
-        top_width=0.95,
-        x_bottom_center=0.5,
-        y_bottom=0.8,
-        bottom_width=0.6
-    )
-    locator = FixedTrapezoidLocator(default_trap)
+    locator = CornerRectLocator(quartile='top-left', width_prop=0.5, height_prop=0.75)  # Use corner rectangle locator
 
     # locator = RectangleLocator()  # Use rectangle locator
-    ref_path = "static/chapter_ref" # run from the root of the project
-    image_files = ["darkness.png", "discover.png", "enlightenment.png"]
-    classifier = ClassicVisionClassifier(reference_images=[f"{ref_path}/{img}" for img in image_files], conf_ths=50)
+    ref_path = 'static/icon_ref_low_res'  # run from the root of the project
+    refs = ['darkness','discover','enlightenment']
+    ref_paths = [f'{ref_path}/{f}.png' for f in refs]
+    classifier = MultiScoreImageClassifier(
+        reference_images=ref_paths
+    )
     detector = VisionDetector(locator, classifier, refresh_rate=1, conf_frames=10)
     detector.debug_loop()  # Start the debug loop
 

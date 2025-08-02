@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from turtle import width
 import cv2
 import numpy as np
 
@@ -63,6 +64,45 @@ class FixedRectangleLocator(Locator):
             [x2, y2],
             [x1, y2]
         ], dtype=np.int32)
+    
+class CornerRectLocator(Locator):
+    def __init__(self, quartile:str, width_prop:float, height_prop:float):
+        # quartile: 0-3, representing the quarter of the frame to crop
+        self.quartile = quartile # 'top-left', 'top-right', 'bottom-left', 'bottom-right'
+        self.width = width_prop
+        self.height = height_prop
+
+    def find_page_contour(self, frame):
+        """
+        Returns a rectangle contour in the specified quartile of the frame.
+        Quartiles: 'top-left', 'top-right', 'bottom-left', 'bottom-right'
+        """
+        h, w = frame.shape[:2]
+        rect_w = int(self.width * w//2)
+        rect_h = int(self.height * h//2)
+
+        if self.quartile == 'top-left':
+            x1, y1 = 0, 0
+            x2, y2 = x1 + rect_w, y1 + rect_h
+        elif self.quartile == 'top-right':
+            x2, y1 = w, 0
+            x1, y2 = x2 - rect_w, y1 + rect_h
+        elif self.quartile == 'bottom-left':
+            x1, y2 = 0, h
+            x2, y1 = x1 + rect_w, y2 - rect_h
+        elif self.quartile == 'bottom-right':
+            x2, y2 = w, h
+            x1, y1 = x2 - rect_w, y2 - rect_h
+        else:
+            raise ValueError("Quartile must be one of: 'top-left', 'top-right', 'bottom-left', 'bottom-right'")
+
+        return np.array([
+            [x1, y1],
+            [x2, y1],
+            [x2, y2],
+            [x1, y2]
+        ], dtype=np.int32)
+
     
 #fixed Trapezoid locator, used for fixed rectangle detection
 @dataclass
