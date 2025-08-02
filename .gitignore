@@ -1,7 +1,4 @@
-static/videos/ 
-static/archive/
-static/data/
-models/
+static/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

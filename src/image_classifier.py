@@ -7,6 +7,7 @@ import torch
 from PIL import Image
 from transformers import AutoImageProcessor, AutoModel
 from typing import List, Tuple, Dict
+from time import time
 
 class ImageClassifier:
     def __init__(self, reference_images=List[str], conf_ths=50):
@@ -84,7 +85,7 @@ class CNNImageClassifier(ImageClassifier):
     def __init__(
         self,
         reference_images: List[str],
-        conf_ths: float = 0.2,
+        conf_ths: float=50,
         kp_ths: float = 0.2,
         device: torch.device = torch.device("cpu"),
     ):
@@ -99,12 +100,12 @@ class CNNImageClassifier(ImageClassifier):
         )
         self.model = AutoModel.from_pretrained(
             "ETH-CVG/lightglue_superpoint"
-        ).to(self.device).eval()  # eval mode for speed :contentReference[oaicite:7]{index=7}
+        ).to(self.device).eval() 
 
 
     def _load_reference_images(self):
         self.reference_images = [
-            Image.open(p).convert("RGB") for p in self.reference_images
+            Image.open(p).convert('L').convert('RGB')for p in self.reference_images
         ]
         if not self.reference_images:
             raise ValueError("No reference images provided or loaded.")
@@ -115,9 +116,9 @@ class CNNImageClassifier(ImageClassifier):
         else:
             x, y, w, h = cv2.boundingRect(contour)
             patch = frame[y : y + h, x : x + w]
-        
-        rgb = cv2.cvtColor(patch, cv2.COLOR_BGR2RGB)
-        return Image.fromarray(rgb)
+
+        gray = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
+        return Image.fromarray(gray).convert('RGB')
 
     def classify(
         self, 
@@ -131,7 +132,8 @@ class CNNImageClassifier(ImageClassifier):
             # Prepare pair
             imgs = [ref_pil, query_pil]
             inputs = self.processor(
-                imgs, return_tensors="pt"
+                imgs, return_tensors="pt",
+                padding=True
             ).to(self.device)
 
             # Forward + post-process
@@ -139,14 +141,12 @@ class CNNImageClassifier(ImageClassifier):
                 outputs = self.model(**inputs)
             img_sizes = [[(ref_pil.height, ref_pil.width),
                           (query_pil.height, query_pil.width)]]
-            matches = self.processor.post_process_keypoint_matching(
-                outputs, img_sizes, threshold=self.conf_ths
+            processed = self.processor.post_process_keypoint_matching(
+                outputs, img_sizes
             )
 
-            # Count matches above threshold
-            ms = matches[0]["matching_scores"]
-            sim_score = (ms > self.conf_ths).sum().item()
-            scores[name] = sim_score
+            # Compute score
+            scores[name] = self._calc_score(processed[0])
 
         # Return best match name and all scores
         best = max(scores, key=scores.get)
@@ -161,39 +161,53 @@ class CNNImageClassifier(ImageClassifier):
         query_pil = self._crop_roi(frame, contour)
         batch_images: List[Image.Image] = []
         for ref_pil in self.reference_images:
-            batch_images.append((ref_pil, query_pil))
+            batch_images.append([ref_pil, query_pil])
 
-        print(batch_images)
         # 2) Tokenize all images in one batch on target device
+        start = time()
         inputs = self.processor(
             batch_images,
             return_tensors="pt",
+            device=self.device,
             padding=True
         ).to(self.device)
+        # print(f"Tokenization took {time() - start:.2f} seconds")
 
         # 3) Single forward pass for all pairs
+        start = time()
         with torch.no_grad():
             outputs = self.model(**inputs)
+        # print(f"Model forward pass took {time() - start:.2f} seconds")
 
         # 4) Post‐process all matches at once
+        start = time()
         img_sizes = [
             [(ref.height, ref.width), (query_pil.height, query_pil.width)]
-            for _ in self.refs_pil
+            for ref, _ in batch_images
         ]
-        matches_batch = self.processor.post_process_keypoint_matching(
+        processed_results_batch = self.processor.post_process_keypoint_matching(
             outputs,
-            img_sizes,
-            threshold=self.conf_ths
+            img_sizes
         )
+        # print(f"Post-processing took {time() - start:.2f} seconds")
 
         # 5) Compute per-pair similarity scores
+        start = time()
         scores: Dict[str, float] = {}
         for idx, name in enumerate(self.reference_names):
-            matching_scores = matches_batch[idx]["matching_scores"]
-            # Example metric: count of matches > threshold
-            sim_score = float((matching_scores > self.conf_ths).sum().item())
-            scores[name] = sim_score
+            scores[name] = self._calc_score(processed_results_batch[idx])
+        # print(f"Scoring took {time() - start:.2f} seconds")
 
-        # 6) Select best match
-        best_match = max(scores, key=scores.get)
-        return best_match, scores
+        # Return best match name and all scores
+        best = max(scores, key=scores.get)
+        return best, scores
+
+    def _calc_score(self, processed_outputs):
+        """
+        Calculate the similarity score based on the model outputs.
+        Inlier-Ratio: num matches / max(ref_keypoints, query_keypoints)
+        """
+        matching_scores = processed_outputs["matching_scores"]
+        good_matches_index = matching_scores > self.kp_ths
+        good_matches = matching_scores[good_matches_index]
+        return float(good_matches.sum())
