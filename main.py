@@ -8,8 +8,8 @@ import uvicorn
 import os
 import json
 from src.vision_detector import VisionDetector
-from src.page_locator import FixedRectangleLocator, RectangleLocator
-from src.image_classifier import ClassicVisionClassifier
+from src.page_locator import CornerRectLocator
+from src.image_classifier import MultiScoreImageClassifier
 
 import threading
 import queue
@@ -25,14 +25,18 @@ refs = [
     "enlightenment"
 ]
 
-IMG_REFS = [f"static/chapter_ref/{ref}.jpg" for ref in refs]
+IMG_REFS = [f"static/Icon_ref_low_res/{ref}.png" for ref in refs]
 VIDEOS = [f"static/videos/{ref}.mp4" for ref in refs]
 
-classifier = ClassicVisionClassifier(reference_images=IMG_REFS, conf_ths=50)
+classifier = MultiScoreImageClassifier(reference_images=IMG_REFS)
 # detector = RectangleLocator(classifier=classifier, refresh_rate=1, conf_frames=10)
-default_rect = (0.1, 0.1, 0.85, 0.8)  # Example rectangle coordinates
-locator = FixedRectangleLocator(default_rect)
-detector = VisionDetector(locator, classifier, refresh_rate=1, conf_frames=10)
+locator = CornerRectLocator(quartile='top-left', width_prop=1, height_prop=1)
+
+REFRESH_RATE = int(os.environ.get("REFRESH_RATE", 50))  # Hz
+CONF_FRAMES = int(os.environ.get("CONF_FRAMES", 10))  # Number of frames to confirm detection
+DEFAULT_TIMER = int(os.environ.get("DEFAULT_REVERT_TIMER", 5))  # Default timer in seconds
+frames_until_revert = DEFAULT_TIMER/(REFRESH_RATE/1000)  # Convert seconds to frames
+detector = VisionDetector(locator, classifier, refresh_rate=REFRESH_RATE, conf_frames=CONF_FRAMES)
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -88,16 +92,29 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         loop = asyncio.get_event_loop()
+        frames_without_winner = 0
         while True:
+
             winner = await loop.run_in_executor(None, winner_queue.get)
             if winner is None:
-                break
-            if not isinstance(winner, int) or winner < 0 or winner >= len(VIDEOS):
-                await websocket.send_text(json.dumps({"error": "Invalid video index"}))
+                frames_without_winner += 1
                 continue
+            else:
+                frames_without_winner = 0
+
+            if not isinstance(winner, int) or winner < 0 or winner >= len(VIDEOS):
+                await websocket.send_text(json.dumps({f"error": f"Invalid video index: {winner}"}))
+                continue
+            
             if winner != current_index:
+                print(f"Winner changed: {winner} (previous: {current_index})")
                 current_index = winner
                 await websocket.send_text(socket_message(current_index))
+
+            if frames_without_winner >= frames_until_revert:
+                print(f'no winner for {frames_without_winner} frames, reverting to default video')
+                # TODO: send index of default video
+        
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -110,4 +127,4 @@ async def websocket_endpoint(websocket: WebSocket):
         worker_thread.join(timeout=1)
 
 if __name__ == "__main__":
-    uvicorn.run("main:a pp", host="0.0.0.0", port=PORT, reload=True, log_level="debug")
+    uvicorn.run("main:app", port=PORT, reload=True, log_level="debug")

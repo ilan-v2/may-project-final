@@ -1,9 +1,6 @@
 import cv2
 import numpy as np
-from page_locator import (
-    CornerRectLocator
-)
-from yolo_locator import YoloLocator
+from page_locator import CornerRectLocator
 from image_classifier import MultiScoreImageClassifier
 
 class VisionDetector:
@@ -20,10 +17,9 @@ class VisionDetector:
         self.locator = locator
         self.classifier = classifier
         self.refresh_rate = refresh_rate
-        print(f"Refresh rate: {self.refresh_rate} ms")
         self.conf_frames = conf_frames
 
-    def _find_winner(self, frame, focus_contour, with_scores=False):
+    def _find_winner(self, frame, focus_contour):
         """
         Find the index of the image with the highest score.
 
@@ -36,13 +32,10 @@ class VisionDetector:
         focus_patch = self._get_focus_patch(frame, focus_contour)
         scores = self.classifier.classify(focus_patch) # should return a dict of scores
         if scores is None:
-            return None, None if with_scores else None
+            return None, None
 
         winner = max(scores, key=scores.get)  # Get the key with the highest value
-        if with_scores:
-            return winner, scores
-        else:
-            return winner
+        return winner, scores
 
     def _get_focus_patch(self, frame, focus_contour):
         """
@@ -71,7 +64,7 @@ class VisionDetector:
                 cv2.drawContours(frame, [page_contour], -1, (0, 255, 0), 3)
 
                 # give the focus frame to the classifier
-                winner, scores = self._find_winner(frame, page_contour, with_scores=True)
+                winner, scores = self._find_winner(frame, page_contour)
                 # show scores in blue, with more space below the winner text
                 y_start = 70  # Start scores lower to add space after winner
                 if scores is not None:
@@ -121,7 +114,7 @@ class VisionDetector:
             page_contour = self.locator.get_page_contour(frame)
 
             if page_contour is not None:
-                current_winner = self._find_winner(frame, page_contour)
+                current_winner, scores = self._find_winner(frame, page_contour)
                 if current_winner != previous_winner:
                     frame_count = 0
                     previous_winner = current_winner
@@ -137,7 +130,7 @@ class VisionDetector:
                 break
 
 if __name__ == "__main__":
-    locator = CornerRectLocator(quartile='top-left', width_prop=0.5, height_prop=0.75)  # Use corner rectangle locator
+    locator = CornerRectLocator(quartile='top-left', width_prop=1, height_prop=1)  # Use corner rectangle locator
 
     # locator = RectangleLocator()  # Use rectangle locator
     ref_path = 'static/icon_ref_low_res'  # run from the root of the project

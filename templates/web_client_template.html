@@ -33,10 +33,9 @@
 </head>
 <body>
   <div style="position: absolute; top: 20px; left: 0; width: 100vw; text-align: center; z-index: 10;">
-    <span id="chapterName" style="color: #fff; font-size: 2em; text-shadow: 0 0 10px #000; background: rgba(0,0,0,0.4); padding: 0.2em 1em; border-radius: 0.5em;"></span>
     <span id="errorMsg" style="color: #ff5555; font-size: 1.2em; margin-left: 2em;"></span>
   </div>
-  <video id="player" width="640" height="360" controls autoplay loop>
+  <video id="player" width="640" height="360" controls autoplay loop muted playsinline>
     <source id="videoSource" src="{{ default_video_path }}" type="video/mp4">
   </video>
   <!-- WS_PORT is injected by FastAPI template rendering -->
@@ -80,14 +79,32 @@
           player.load();
           player.play();
         }
-        if (typeof chapter === 'string') {
-          chapterName.textContent = chapter;
-        }
       } catch (e) {
         errorMsg.textContent = 'Invalid message from server';
         console.error('Invalid message from server:', event.data);
       }
     };
+
+    // Ensure video starts automatically on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      player.muted = true; // Ensure autoplay works on all browsers
+      player.play().catch(() => {});
+    });
+
+    // Unmute after first user interaction
+    const unmuteOnUserGesture = () => {
+      player.muted = false;
+      window.removeEventListener('click', unmuteOnUserGesture);
+      window.removeEventListener('keydown', unmuteOnUserGesture);
+    };
+    window.addEventListener('click', unmuteOnUserGesture);
+    window.addEventListener('keydown', unmuteOnUserGesture);
+
+    // Ensure video repeats itself if it reaches the end
+    player.addEventListener('ended', () => {
+      player.currentTime = 0;
+      player.play();
+    });
   </script>
 </body>
 </html>
