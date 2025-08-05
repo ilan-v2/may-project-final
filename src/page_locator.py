@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from turtle import width
 import cv2
 import numpy as np
 
@@ -66,11 +65,20 @@ class FixedRectangleLocator(Locator):
         ], dtype=np.int32)
     
 class CornerRectLocator(Locator):
-    def __init__(self, quartile:str, width_prop:float, height_prop:float):
+    def __init__(
+            self, 
+            quartile:str, 
+            width_prop:float, 
+            height_prop:float,
+            x_space:float=0.0,
+            y_space:float=0.0
+            ):
         # quartile: 0-3, representing the quarter of the frame to crop
         self.quartile = quartile # 'top-left', 'top-right', 'bottom-left', 'bottom-right'
         self.width = width_prop
         self.height = height_prop
+        self.x_space = x_space  # Space between the rectangle and the frame edge in x direction
+        self.y_space = y_space  # Space between the rectangle and the frame edge in y
 
     def find_page_contour(self, frame):
         """
@@ -82,16 +90,16 @@ class CornerRectLocator(Locator):
         rect_h = int(self.height * h//2)
 
         if self.quartile == 'top-left':
-            x1, y1 = 0, 0
+            x1, y1 = 0 + self.x_space* rect_w, 0 + self.y_space* rect_h
             x2, y2 = x1 + rect_w, y1 + rect_h
         elif self.quartile == 'top-right':
-            x2, y1 = w, 0
+            x2, y1 = w - self.x_space* rect_w, 0 + self.y_space* rect_h
             x1, y2 = x2 - rect_w, y1 + rect_h
         elif self.quartile == 'bottom-left':
-            x1, y2 = 0, h
+            x1, y2 = 0 + self.x_space* rect_w, h - self.y_space* rect_h
             x2, y1 = x1 + rect_w, y2 - rect_h
         elif self.quartile == 'bottom-right':
-            x2, y2 = w, h
+            x2, y2 = w - self.x_space* rect_w, h - self.y_space* rect_h
             x1, y1 = x2 - rect_w, y2 - rect_h
         else:
             raise ValueError("Quartile must be one of: 'top-left', 'top-right', 'bottom-left', 'bottom-right'")

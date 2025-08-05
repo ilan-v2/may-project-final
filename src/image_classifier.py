@@ -1,11 +1,8 @@
 from dataclasses import dataclass
 import cv2
 import os
-from matplotlib import contour
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor
 from typing import List, Tuple, Dict
-import matplotlib.pyplot as plt
 from skimage.metrics import structural_similarity as ssim   
 
 

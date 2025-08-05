@@ -26,17 +26,26 @@ refs = [
 ]
 
 IMG_REFS = [f"static/Icon_ref_low_res/{ref}.png" for ref in refs]
+# add default video
+refs.append("logo")
 VIDEOS = [f"static/videos/{ref}.mp4" for ref in refs]
 
 classifier = MultiScoreImageClassifier(reference_images=IMG_REFS)
 # detector = RectangleLocator(classifier=classifier, refresh_rate=1, conf_frames=10)
-locator = CornerRectLocator(quartile='top-left', width_prop=1, height_prop=1)
+locator = CornerRectLocator(
+    quartile='top-left', 
+    width_prop=0.6, 
+    height_prop=0.75,
+    x_space=0.05,
+    y_space=0.1
+)  
 
 REFRESH_RATE = int(os.environ.get("REFRESH_RATE", 50))  # Hz
 CONF_FRAMES = int(os.environ.get("CONF_FRAMES", 10))  # Number of frames to confirm detection
-DEFAULT_TIMER = int(os.environ.get("DEFAULT_REVERT_TIMER", 5))  # Default timer in seconds
-frames_until_revert = DEFAULT_TIMER/(REFRESH_RATE/1000)  # Convert seconds to frames
-detector = VisionDetector(locator, classifier, refresh_rate=REFRESH_RATE, conf_frames=CONF_FRAMES)
+DEFAULT_TIMER = int(os.environ.get("DEFAULT_REVERT_TIMER", 10))  # Default timer in seconds
+
+frames_until_revert = int(DEFAULT_TIMER//(REFRESH_RATE/1000))  # Convert seconds to frames
+detector = VisionDetector(locator, classifier, refresh_rate=REFRESH_RATE, conf_frames=CONF_FRAMES, conf_ths=0.2)
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -44,11 +53,10 @@ templates = Jinja2Templates(directory="templates")
 # Serve static files (JS, videos, etc.)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-@app.get("/web_client.html")
+@app.get("/")
 async def web_client(request: Request):
     ws_port = int(os.environ.get("WS_PORT", 6969))
-    default_video_path = VIDEOS[0]
-    return templates.TemplateResponse("web_client_template.html", {"request": request, "ws_port": ws_port, "default_video_path": default_video_path})
+    return templates.TemplateResponse("web_client_template.html", {"request": request, "ws_port": ws_port, "default_video_path": refs[-1]})
 
 def socket_message(index: int) -> str:
     """
@@ -65,7 +73,7 @@ from starlette.websockets import WebSocketDisconnect
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    current_index = 0
+    current_index = -1
     await websocket.send_text(socket_message(current_index))
 
     winner_queue = queue.Queue()
@@ -98,11 +106,14 @@ async def websocket_endpoint(websocket: WebSocket):
             winner = await loop.run_in_executor(None, winner_queue.get)
             if winner is None:
                 frames_without_winner += 1
+                if frames_without_winner >= frames_until_revert:
+                    if current_index != -1:
+                        current_index = -1
+                        await websocket.send_text(socket_message(current_index))
                 continue
             else:
                 frames_without_winner = 0
-
-            if not isinstance(winner, int) or winner < 0 or winner >= len(VIDEOS):
+            if not isinstance(winner, int) or winner >= len(VIDEOS):
                 await websocket.send_text(json.dumps({f"error": f"Invalid video index: {winner}"}))
                 continue
             
@@ -111,10 +122,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 current_index = winner
                 await websocket.send_text(socket_message(current_index))
 
-            if frames_without_winner >= frames_until_revert:
-                print(f'no winner for {frames_without_winner} frames, reverting to default video')
-                # TODO: send index of default video
-        
+
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -127,4 +135,4 @@ async def websocket_endpoint(websocket: WebSocket):
         worker_thread.join(timeout=1)
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", port=PORT, reload=True, log_level="debug")
+    uvicorn.run("main:app", port=PORT, reload=False, log_level="debug")

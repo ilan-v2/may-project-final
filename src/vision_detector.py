@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
-from page_locator import CornerRectLocator
-from image_classifier import MultiScoreImageClassifier
+from .page_locator import CornerRectLocator, FixedRectangleLocator
+from .image_classifier import MultiScoreImageClassifier
 
 class VisionDetector:
     """
@@ -13,11 +13,12 @@ class VisionDetector:
         refresh_rate: Number of ms between scans.
         conf_frames: Number of frames to consider for a decision.
     """
-    def __init__(self, locator, classifier, refresh_rate=1, conf_frames=10):
+    def __init__(self, locator, classifier, refresh_rate=1, conf_frames=10, conf_ths=1):
         self.locator = locator
         self.classifier = classifier
         self.refresh_rate = refresh_rate
         self.conf_frames = conf_frames
+        self.conf_ths = conf_ths
 
     def _find_winner(self, frame, focus_contour):
         """
@@ -35,6 +36,8 @@ class VisionDetector:
             return None, None
 
         winner = max(scores, key=scores.get)  # Get the key with the highest value
+        if scores[winner] < self.conf_ths:
+            winner = None  # If the score is below the threshold, no winner
         return winner, scores
 
     def _get_focus_patch(self, frame, focus_contour):
@@ -130,7 +133,13 @@ class VisionDetector:
                 break
 
 if __name__ == "__main__":
-    locator = CornerRectLocator(quartile='top-left', width_prop=1, height_prop=1)  # Use corner rectangle locator
+    locator = CornerRectLocator(
+        quartile='top-left', 
+        width_prop=0.6, 
+        height_prop=0.75,
+        x_space=0.05,
+        y_space=0.1
+    )  
 
     # locator = RectangleLocator()  # Use rectangle locator
     ref_path = 'static/icon_ref_low_res'  # run from the root of the project
@@ -139,7 +148,7 @@ if __name__ == "__main__":
     classifier = MultiScoreImageClassifier(
         reference_images=ref_paths
     )
-    detector = VisionDetector(locator, classifier, refresh_rate=1, conf_frames=10)
+    detector = VisionDetector(locator, classifier, refresh_rate=100, conf_frames=10, conf_ths=0.2)
     detector.debug_loop()  # Start the debug loop
 
 

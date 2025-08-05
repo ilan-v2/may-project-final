@@ -2,4 +2,5 @@ fastapi
 uvicorn[standard]
 jinja2
 opencv-python
-ultralytics
+scikit-image
+# ultralytics
